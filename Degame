@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Dash</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: radial-gradient(ellipse at 50% 20%, #20205a, #090914 70%);
+    color: white; font-family: system-ui, sans-serif;
+  }
+  .game { width: min(94vw, 540px); text-align: center; }
+  h1 { margin: 0 0 8px; letter-spacing: 7px; color: #55f7ff; text-shadow: 0 0 18px #00d9ff; }
+  .hud { display: flex; justify-content: space-between; margin: 10px 4px; font-weight: 800; }
+  canvas {
+    display: block; width: 100%; border: 2px solid #55f7ff;
+    border-radius: 14px; background: #090b1c;
+    box-shadow: 0 0 28px #00d9ff55;
+    touch-action: none;
+  }
+  .help { color: #c1c6eb; font-size: 14px; }
+  button {
+    border: 0; border-radius: 999px; padding: 12px 24px;
+    background: linear-gradient(90deg, #00eaff, #c14dff);
+    color: #080818; font-weight: 900; font-size: 16px; cursor: pointer;
+  }
+  button:hover { transform: scale(1.05); }
+</style>
+</head>
+<body>
+<main class="game">
+  <h1>NEON DASH</h1>
+  <div class="hud">
+    <span>⭐ PUNTOS: <b id="score">0</b></span>
+    <span>🏆 RÉCORD: <b id="best">0</b></span>
+  </div>
+  <canvas id="game" width="500" height="600" aria-label="Juego Neon Dash"></canvas>
+  <p class="help">← → o A/D para moverte · Espacio para empezar · En móvil, toca y arrastra</p>
+  <button id="start">¡A JUGAR!</button>
+</main>
+
+<script>
+const canvas = document.querySelector("#game");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.querySelector("#score");
+const bestEl = document.querySelector("#best");
+const startBtn = document.querySelector("#start");
+
+let player, obstacles, gems, particles, score, best, speed, frame, running;
+let keys = {};
+best = Number(localStorage.getItem("neonDashBest") || 0);
+bestEl.textContent = best;
+
+function reset() {
+  player = { x: 250, y: 510, w: 34, h: 34, target: 250 };
+  obstacles = []; gems = []; particles = [];
+  score = 0; speed = 4; frame = 0; running = true;
+  scoreEl.textContent = score;
+  startBtn.textContent = "REINICIAR";
+}
+
+function rect(x, y, w, h, color, glow = 0) {
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = glow;
+  ctx.fillRect(x, y, w, h);
+  ctx.shadowBlur = 0;
+}
+
+function spawn() {
+  const lane = 30 + Math.random() * 400;
+  obstacles.push({ x: lane, y: -35, w: 28 + Math.random() * 24, h: 24 + Math.random() * 28 });
+  if (Math.random() < 0.62) gems.push({ x: 35 + Math.random() * 420, y: -20, r: 9, spin: 0 });
+}
+
+function burst(x, y, color) {
+  for (let i = 0; i < 12; i++) particles.push({
+    x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6,
+    life: 25, color
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, 500, 600);
+
+  // Fondo estrellado y líneas de velocidad
+  for (let i = 0; i < 35; i++) {
+    const x = (i * 83) % 500;
+    const y = (i * 127 + frame * speed * 0.6) % 600;
+    ctx.fillStyle = "#ffffff55";
+    ctx.fillRect(x, y, 2, 2);
+  }
+  ctx.strokeStyle = "#28315f";
+  ctx.lineWidth = 2;
+  for (let x = 0; x < 500; x += 100) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 600); ctx.stroke();
+  }
+
+  if (running) {
+    frame++;
+    if (frame % Math.max(23, Math.floor(58 - score / 5)) === 0) spawn();
+    speed = 4 + Math.min(7, score / 35);
+
+    if (keys.ArrowLeft || keys.a) player.target -= 7;
+    if (keys.ArrowRight || keys.d) player.target += 7;
+    player.target = Math.max(18, Math.min(482, player.target));
+    player.x += (player.target - player.x) * 0.22;
+
+    obstacles.forEach(o => o.y += speed);
+    gems.forEach(g => { g.y += speed; g.spin += .12; });
+    obstacles = obstacles.filter(o => o.y < 630);
+    gems = gems.filter(g => g.y < 630);
+
+    for (const o of obstacles) {
+      rect(o.x, o.y, o.w, o.h, "#ff397a", 14);
+      if (Math.abs(player.x - (o.x + o.w / 2)) < (player.w + o.w) / 2 - 4 &&
+          Math.abs(player.y - (o.y + o.h / 2)) < (player.h + o.h) / 2 - 4) {
+        burst(player.x, player.y, "#ff397a");
+        running = false;
+      }
+    }
+
+    gems = gems.filter(g => {
+      const hit = Math.hypot(player.x - g.x, player.y - g.y) < 27;
+      if (hit) { score += 10; scoreEl.textContent = score; burst(g.x, g.y, "#ffe45c"); }
+      return !hit;
+    });
+
+    // Nave
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.fillStyle = "#52f7ff";
+    ctx.shadowColor = "#00eaff"; ctx.shadowBlur = 22;
+    ctx.beginPath(); ctx.moveTo(0, -23); ctx.lineTo(18, 18);
+    ctx.lineTo(0, 10); ctx.lineTo(-18, 18); ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // Puntos al pasar obstáculos
+    score += 0.035;
+    scoreEl.textContent = Math.floor(score);
+  }
+
+  for (const g of gems) {
+    ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.spin);
+    rect(-8, -8, 16, 16, "#ffe45c", 15);
+    ctx.restore();
+  }
+
+  particles = particles.filter(p => p.life-- > 0);
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    ctx.globalAlpha = p.life / 25;
+    rect(p.x, p.y, 4, 4, p.color);
+  }
+  ctx.globalAlpha = 1;
+
+  if (!running) {
+    const finalScore = Math.floor(score);
+    if (finalScore > best) {
+      best = finalScore;
+      localStorage.setItem("neonDashBest", best);
+      bestEl.textContent = best;
+    }
+    ctx.fillStyle = "#070817cc";
+    ctx.fillRect(0, 0, 500, 600);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 42px system-ui";
+    ctx.fillText("¡UPS!", 250, 260);
+    ctx.fillStyle = "#ffe45c";
+    ctx.font = "bold 24px system-ui";
+    ctx.fillText("Puntos: " + finalScore, 250, 305);
+    ctx.fillStyle = "#c1c6eb";
+    ctx.font = "18px system-ui";
+    ctx.fillText("Pulsa «Reiniciar» para otra ronda", 250, 350);
+  }
+
+  if (!running && particles.length) requestAnimationFrame(draw);
+  else if (running) requestAnimationFrame(draw);
+}
+draw();
+
+startBtn.addEventListener("click", () => { reset(); draw(); });
+document.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if (e.key === " " && !running) { reset(); draw(); }
+});
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+function moveToPointer(e) {
+  const r = canvas.getBoundingClientRect();
+  player.target = (e.clientX - r.left) * (500 / r.width);
+}
+canvas.addEventListener("pointerdown", moveToPointer);
+canvas.addEventListener("pointermove", e => { if (e.buttons) moveToPointer(e); });
+</script>
+</body>
+</html>
